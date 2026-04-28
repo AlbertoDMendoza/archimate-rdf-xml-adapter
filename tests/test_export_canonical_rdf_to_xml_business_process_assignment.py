@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from archimate_adapter.graphdb.client import GraphDBClient, GraphDBClientError
+from archimate_adapter.config import GRAPHDB_BASE_URL
 from archimate_adapter.services.export_canonical_rdf_to_xml import (
     ExportCanonicalRdfToXmlService,
 )
@@ -16,12 +17,12 @@ def test_export_canonical_rdf_to_xml_includes_business_process_and_assignment(
     output_path = tmp_path / "exported-business-process-assignment.xml"
 
     client = GraphDBClient(
-        base_url="http://192.168.0.105:7200",
+        base_url=GRAPHDB_BASE_URL,
         repository_id="archimate_phase1",
     )
 
     import_service = ImportXmlToCanonicalRdfService(
-        graphdb_base_url="http://192.168.0.105:7200",
+        graphdb_base_url=GRAPHDB_BASE_URL,
         repository_id="archimate_phase1",
         element_mapping_path="src/archimate_adapter/mapping/element_types.yaml",
         relationship_mapping_path="src/archimate_adapter/mapping/relationship_types.yaml",
@@ -29,7 +30,7 @@ def test_export_canonical_rdf_to_xml_includes_business_process_and_assignment(
     )
 
     export_service = ExportCanonicalRdfToXmlService(
-        graphdb_base_url="http://192.168.0.105:7200",
+        graphdb_base_url=GRAPHDB_BASE_URL,
         repository_id="archimate_phase1",
         element_mapping_path="src/archimate_adapter/mapping/element_types.yaml",
         relationship_mapping_path="src/archimate_adapter/mapping/relationship_types.yaml",

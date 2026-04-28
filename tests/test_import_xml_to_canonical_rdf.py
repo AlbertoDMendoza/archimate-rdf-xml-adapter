@@ -1,6 +1,7 @@
 import pytest
 
 from archimate_adapter.graphdb.client import GraphDBClient, GraphDBClientError
+from archimate_adapter.config import GRAPHDB_BASE_URL
 from archimate_adapter.namespaces import ARCHIMATE_NS, EX_NS, RDF_NS
 from archimate_adapter.services.import_xml_to_canonical_rdf import (
     ImportXmlToCanonicalRdfService,
@@ -11,12 +12,12 @@ def test_import_from_file_inserts_phase1_model_into_named_graph() -> None:
     graph_iri = "https://example.org/graph/test-import"
 
     client = GraphDBClient(
-        base_url="http://192.168.0.105:7200",
+        base_url=GRAPHDB_BASE_URL,
         repository_id="archimate_phase1",
     )
 
     service = ImportXmlToCanonicalRdfService(
-        graphdb_base_url="http://192.168.0.105:7200",
+        graphdb_base_url=GRAPHDB_BASE_URL,
         repository_id="archimate_phase1",
         element_mapping_path="src/archimate_adapter/mapping/element_types.yaml",
         relationship_mapping_path="src/archimate_adapter/mapping/relationship_types.yaml",

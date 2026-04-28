@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 
 from archimate_adapter.dto.model import ElementDTO, ModelDTO, RelationshipDTO
+from archimate_adapter.config import GRAPHDB_BASE_URL
 from archimate_adapter.graphdb.client import GraphDBClient, GraphDBClientError
 from archimate_adapter.namespaces import ARCHIMATE_NS, EX_NS, RDF_NS
 from archimate_adapter.services.export_canonical_rdf_to_xml import (
@@ -312,12 +313,12 @@ def test_import_from_file_inserts_application_collaboration_interaction_batch_in
     graph_iri = "https://example.org/graph/test-import-application-collaboration-interaction-batch"
 
     client = GraphDBClient(
-        base_url="http://192.168.0.105:7200",
+        base_url=GRAPHDB_BASE_URL,
         repository_id="archimate_phase1",
     )
 
     service = ImportXmlToCanonicalRdfService(
-        graphdb_base_url="http://192.168.0.105:7200",
+        graphdb_base_url=GRAPHDB_BASE_URL,
         repository_id="archimate_phase1",
         element_mapping_path="src/archimate_adapter/mapping/element_types.yaml",
         relationship_mapping_path="src/archimate_adapter/mapping/relationship_types.yaml",
@@ -396,12 +397,12 @@ def test_export_canonical_rdf_to_xml_includes_application_collaboration_interact
     )
 
     client = GraphDBClient(
-        base_url="http://192.168.0.105:7200",
+        base_url=GRAPHDB_BASE_URL,
         repository_id="archimate_phase1",
     )
 
     import_service = ImportXmlToCanonicalRdfService(
-        graphdb_base_url="http://192.168.0.105:7200",
+        graphdb_base_url=GRAPHDB_BASE_URL,
         repository_id="archimate_phase1",
         element_mapping_path="src/archimate_adapter/mapping/element_types.yaml",
         relationship_mapping_path="src/archimate_adapter/mapping/relationship_types.yaml",
@@ -409,7 +410,7 @@ def test_export_canonical_rdf_to_xml_includes_application_collaboration_interact
     )
 
     export_service = ExportCanonicalRdfToXmlService(
-        graphdb_base_url="http://192.168.0.105:7200",
+        graphdb_base_url=GRAPHDB_BASE_URL,
         repository_id="archimate_phase1",
         element_mapping_path="src/archimate_adapter/mapping/element_types.yaml",
         relationship_mapping_path="src/archimate_adapter/mapping/relationship_types.yaml",

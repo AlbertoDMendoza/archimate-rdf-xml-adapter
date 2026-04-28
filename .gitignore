@@ -6,4 +6,4 @@ dist/
 *.egg-info/
 docker/graphdb/home/
 docker/graphdb/init/GRAPHDB_FREE_v11.3.license
-
+src/archimate_adapter/config.py

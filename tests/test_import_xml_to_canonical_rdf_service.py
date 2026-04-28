@@ -116,7 +116,7 @@ def test_import_uses_per_file_graph_without_clearing_when_append(monkeypatch, tm
     monkeypatch.setattr(module, "build_canonical_import_sparql", fake_build_canonical_import_sparql)
 
     service = ImportXmlToCanonicalRdfService(
-        graphdb_base_url="http://192.168.0.105:7200",
+        graphdb_base_url=GRAPHDB_BASE_URL,
         repository_id="archimate_phase1",
         element_mapping_path="elements.yaml",
         relationship_mapping_path="relationships.yaml",
@@ -165,7 +165,7 @@ def test_import_clears_single_graph_when_replace_enabled(monkeypatch, tmp_path):
     )
 
     service = ImportXmlToCanonicalRdfService(
-        graphdb_base_url="http://192.168.0.105:7200",
+        graphdb_base_url=GRAPHDB_BASE_URL,
         repository_id="archimate_phase1",
         element_mapping_path="elements.yaml",
         relationship_mapping_path="relationships.yaml",

@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 
 from archimate_adapter.graphdb.client import GraphDBClient, GraphDBClientError
+from archimate_adapter.config import GRAPHDB_BASE_URL
 from archimate_adapter.namespaces import ARCHIMATE_NS, EX_NS, RDF_NS
 from archimate_adapter.services.export_canonical_rdf_to_xml import (
     ExportCanonicalRdfToXmlService,
@@ -19,12 +20,12 @@ def test_roundtrip_supported_phase1_types(tmp_path: Path) -> None:
     exported_xml_path = tmp_path / "phase1-supported-types-roundtrip.xml"
 
     client = GraphDBClient(
-        base_url="http://192.168.0.105:7200",
+        base_url=GRAPHDB_BASE_URL,
         repository_id="archimate_phase1",
     )
 
     source_import_service = ImportXmlToCanonicalRdfService(
-        graphdb_base_url="http://192.168.0.105:7200",
+        graphdb_base_url=GRAPHDB_BASE_URL,
         repository_id="archimate_phase1",
         element_mapping_path="src/archimate_adapter/mapping/element_types.yaml",
         relationship_mapping_path="src/archimate_adapter/mapping/relationship_types.yaml",
@@ -32,7 +33,7 @@ def test_roundtrip_supported_phase1_types(tmp_path: Path) -> None:
     )
 
     export_service = ExportCanonicalRdfToXmlService(
-        graphdb_base_url="http://192.168.0.105:7200",
+        graphdb_base_url=GRAPHDB_BASE_URL,
         repository_id="archimate_phase1",
         element_mapping_path="src/archimate_adapter/mapping/element_types.yaml",
         relationship_mapping_path="src/archimate_adapter/mapping/relationship_types.yaml",
@@ -40,7 +41,7 @@ def test_roundtrip_supported_phase1_types(tmp_path: Path) -> None:
     )
 
     roundtrip_import_service = ImportXmlToCanonicalRdfService(
-        graphdb_base_url="http://192.168.0.105:7200",
+        graphdb_base_url=GRAPHDB_BASE_URL,
         repository_id="archimate_phase1",
         element_mapping_path="src/archimate_adapter/mapping/element_types.yaml",
         relationship_mapping_path="src/archimate_adapter/mapping/relationship_types.yaml",

@@ -1,9 +1,10 @@
 from archimate_adapter.graphdb.client import GraphDBClient, GraphDBClientError
+from archimate_adapter.config import GRAPHDB_BASE_URL
 
 
 def test_update_inserts_triple_into_named_graph():
     client = GraphDBClient(
-        base_url="http://192.168.0.105:7200",
+        base_url=GRAPHDB_BASE_URL,
         repository_id="archimate_phase1",
     )
 
