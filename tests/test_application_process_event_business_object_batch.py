@@ -303,12 +303,12 @@ def test_import_from_file_inserts_application_process_event_business_object_batc
     graph_iri = "https://example.org/graph/test-import-application-process-event-business-object-batch"
 
     client = GraphDBClient(
-        base_url="http://localhost:7200",
+        base_url="http://192.168.0.105:7200",
         repository_id="archimate_phase1",
     )
 
     service = ImportXmlToCanonicalRdfService(
-        graphdb_base_url="http://localhost:7200",
+        graphdb_base_url="http://192.168.0.105:7200",
         repository_id="archimate_phase1",
         element_mapping_path="src/archimate_adapter/mapping/element_types.yaml",
         relationship_mapping_path="src/archimate_adapter/mapping/relationship_types.yaml",
@@ -385,12 +385,12 @@ def test_export_canonical_rdf_to_xml_includes_application_process_event_business
     output_path = tmp_path / "exported-application-process-event-business-object-batch.xml"
 
     client = GraphDBClient(
-        base_url="http://localhost:7200",
+        base_url="http://192.168.0.105:7200",
         repository_id="archimate_phase1",
     )
 
     import_service = ImportXmlToCanonicalRdfService(
-        graphdb_base_url="http://localhost:7200",
+        graphdb_base_url="http://192.168.0.105:7200",
         repository_id="archimate_phase1",
         element_mapping_path="src/archimate_adapter/mapping/element_types.yaml",
         relationship_mapping_path="src/archimate_adapter/mapping/relationship_types.yaml",
@@ -398,7 +398,7 @@ def test_export_canonical_rdf_to_xml_includes_application_process_event_business
     )
 
     export_service = ExportCanonicalRdfToXmlService(
-        graphdb_base_url="http://localhost:7200",
+        graphdb_base_url="http://192.168.0.105:7200",
         repository_id="archimate_phase1",
         element_mapping_path="src/archimate_adapter/mapping/element_types.yaml",
         relationship_mapping_path="src/archimate_adapter/mapping/relationship_types.yaml",

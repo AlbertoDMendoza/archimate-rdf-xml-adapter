@@ -1,6 +1,6 @@
 from pathlib import Path
 
-GRAPHDB_BASE_URL = "http://localhost:7200"
+GRAPHDB_BASE_URL = "http://192.168.0.105:7200"
 GRAPHDB_REPOSITORY_ID = "archimate_phase1"
 DEFAULT_MODEL_GRAPH_IRI = "https://example.org/graph/model"
 

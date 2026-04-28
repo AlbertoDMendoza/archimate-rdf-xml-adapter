@@ -12,12 +12,12 @@ def test_import_from_file_inserts_business_process_and_assignment_into_named_gra
     graph_iri = "https://example.org/graph/test-import-business-process-assignment"
 
     client = GraphDBClient(
-        base_url="http://localhost:7200",
+        base_url="http://192.168.0.105:7200",
         repository_id="archimate_phase1",
     )
 
     service = ImportXmlToCanonicalRdfService(
-        graphdb_base_url="http://localhost:7200",
+        graphdb_base_url="http://192.168.0.105:7200",
         repository_id="archimate_phase1",
         element_mapping_path="src/archimate_adapter/mapping/element_types.yaml",
         relationship_mapping_path="src/archimate_adapter/mapping/relationship_types.yaml",
