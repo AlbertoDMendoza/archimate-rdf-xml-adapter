@@ -32,6 +32,7 @@ SKIP_PREDICATES = {
     str(OWL.versionInfo),
     str(ARCHIMATE.identifier),
     str(ARCHIMATE["name"]),
+    str(ARCHIMATE.specialization),
     str(DCT.description),
     str(DCT.created),
     str(DCT.creator),
@@ -169,18 +170,22 @@ def convert(ttl_path: str | Path, output_path: str | Path,
             doc = str(v)
             break
 
-        # Collect all literal-valued properties (skip standard ones)
+        # Collect properties
         props: dict[str, str] = {}
-        if original_type and original_type not in known_types:
-            props["Specialization"] = _short_type(original_type)
 
+        # archimate:specialization is a URI reference — capture it as "Specialization"
+        for _s, _p, spec_obj in g.triples((uri_ref, ARCHIMATE.specialization, None)):
+            if isinstance(spec_obj, URIRef):
+                props["Specialization"] = _short_type(str(spec_obj))
+            break
+
+        # Collect all literal-valued properties (skip standard ones)
         for _s, pred, obj in g.triples((uri_ref, None, None)):
             pred_str = str(pred)
             if pred_str in SKIP_PREDICATES:
                 continue
             if not isinstance(obj, Literal):
                 continue
-            # Use short predicate name as property key
             prop_name = _short_type(pred_str)
             props[prop_name] = str(obj)
 
