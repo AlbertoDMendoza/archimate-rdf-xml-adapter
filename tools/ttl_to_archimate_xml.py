@@ -1,11 +1,12 @@
 """
 Convert a Mendoza-style ArchiMate TTL file to ArchiMate Exchange XML.
 
-Maps Mendoza specialization types (python:PythonClass, laravel:LaravelFolder, etc.)
-to the closest standard ArchiMate element types so the output is valid Exchange XML.
+Dynamically resolves specialization types to standard ArchiMate element types
+by walking rdfs:subClassOf chains, and resolves custom relationship predicates
+by walking rdfs:subPropertyOf chains. No framework-specific types are hardcoded.
 
-Preserves the original Mendoza type and all specialization datatype properties
-as ArchiMate Exchange propertyDefinitions / properties.
+Collects all literal-valued properties on each instance and emits them as
+ArchiMate Exchange XML propertyDefinitions / properties.
 """
 
 from __future__ import annotations
@@ -14,62 +15,27 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import yaml
 import rdflib
-from rdflib import RDF, RDFS, Namespace
+from rdflib import RDF, RDFS, OWL, Namespace, Literal, URIRef
 
-ARCHIMATE = Namespace("https://purl.org/archimate#")
-PYTHON = Namespace("https://purl.org/archimate/python#")
-LARAVEL = Namespace("https://purl.org/archimate/laravel#")
+ARCHIMATE_RDF_NS = "https://purl.org/archimate#"
+ARCHIMATE = Namespace(ARCHIMATE_RDF_NS)
 DCT = Namespace("http://purl.org/dc/terms/")
 
-# Map RDF types to ArchiMate Exchange XML xsi:type values
-TYPE_MAP = {
-    str(ARCHIMATE.SystemSoftware): "SystemSoftware",
-    str(ARCHIMATE.ApplicationComponent): "ApplicationComponent",
-    str(ARCHIMATE.ApplicationFunction): "ApplicationFunction",
-    str(ARCHIMATE.DataObject): "DataObject",
-    str(ARCHIMATE.Node): "Node",
-    str(LARAVEL.LaravelApplication): "ApplicationComponent",
-    str(LARAVEL.LaravelFolder): "Grouping",
-    str(LARAVEL.LaravelSourceFile): "DataObject",
-    str(PYTHON.PythonClass): "DataObject",
-    str(PYTHON.PythonFunction): "ApplicationFunction",
-    str(PYTHON.PythonModule): "ApplicationComponent",
-    str(PYTHON.PythonPackage): "ApplicationComponent",
-}
-
-# Map RDF predicates to ArchiMate Exchange XML relationship xsi:type values
-REL_MAP = {
-    str(ARCHIMATE.composition): "Composition",
-    str(ARCHIMATE.realization): "Realization",
-    str(ARCHIMATE.serving): "Serving",
-    str(ARCHIMATE.access): "Access",
-    str(ARCHIMATE.aggregation): "Aggregation",
-    str(ARCHIMATE.assignment): "Assignment",
-    str(ARCHIMATE.association): "Association",
-    str(ARCHIMATE.flow): "Flow",
-    str(ARCHIMATE.influence): "Influence",
-    str(ARCHIMATE.specialization): "Specialization",
-    str(ARCHIMATE.triggering): "Triggering",
-    str(PYTHON.moduleContainsClass): "Composition",
-    str(PYTHON.moduleContainsFunction): "Composition",
-    str(PYTHON.moduleImports): "Serving",
-    str(PYTHON.classExtends): "Specialization",
-}
-
-# Specialization datatype properties to capture as Exchange XML properties
-SPEC_PROPERTIES = {
-    str(PYTHON.className): "python:className",
-    str(PYTHON.classModule): "python:classModule",
-    str(PYTHON.classBase): "python:classBase",
-    str(PYTHON.functionName): "python:functionName",
-    str(PYTHON.functionModule): "python:functionModule",
-    str(PYTHON.functionDecorator): "python:functionDecorator",
-    str(PYTHON.moduleName): "python:moduleName",
-    str(PYTHON.packageName): "python:packageName",
-    str(PYTHON.packageVersion): "python:packageVersion",
-    str(LARAVEL.filePath): "laravel:filePath",
-    str(LARAVEL.folderPath): "laravel:folderPath",
+# Predicates to skip when collecting specialization properties
+SKIP_PREDICATES = {
+    str(RDF.type),
+    str(RDFS.label),
+    str(RDFS.comment),
+    str(OWL.imports),
+    str(OWL.versionInfo),
+    str(ARCHIMATE.identifier),
+    str(ARCHIMATE["name"]),
+    str(DCT.description),
+    str(DCT.created),
+    str(DCT.creator),
+    str(DCT.modified),
 }
 
 
@@ -77,6 +43,7 @@ SPEC_PROPERTIES = {
 class ElementInfo:
     identifier: str
     xml_type: str
+    original_type: str
     name: str | None = None
     documentation: str | None = None
     properties: dict[str, str] = field(default_factory=dict)
@@ -90,118 +57,192 @@ class RelInfo:
     target_id: str
 
 
-def convert(ttl_path: str | Path, output_path: str | Path) -> None:
+def _load_known_element_types(yaml_path: Path) -> dict[str, str]:
+    """Load rdf_class -> xml_type mapping from the adapter's element_types.yaml."""
+    with open(yaml_path) as f:
+        data = yaml.safe_load(f)
+    return {v["rdf_class"]: k for k, v in data.get("xml_to_rdf", {}).items()}
+
+
+def _load_known_rel_predicates(yaml_path: Path) -> dict[str, str]:
+    """Load rdf_predicate -> xml_type mapping from the adapter's relationship_types.yaml."""
+    with open(yaml_path) as f:
+        data = yaml.safe_load(f)
+    return {v["rdf_predicate"]: v.get("exchange_type", k)
+            for k, v in data.get("xml_to_rdf", {}).items()}
+
+
+def _resolve_type(rdf_type: str, g: rdflib.Graph,
+                  known_types: dict[str, str],
+                  _seen: set[str] | None = None) -> str | None:
+    """Walk rdfs:subClassOf chain to find the nearest known ArchiMate type."""
+    if rdf_type in known_types:
+        return known_types[rdf_type]
+    if _seen is None:
+        _seen = set()
+    if rdf_type in _seen:
+        return None
+    _seen.add(rdf_type)
+    for parent in g.objects(URIRef(rdf_type), RDFS.subClassOf):
+        result = _resolve_type(str(parent), g, known_types, _seen)
+        if result:
+            return result
+    return None
+
+
+def _resolve_predicate(pred: str, g: rdflib.Graph,
+                       known_preds: dict[str, str],
+                       _seen: set[str] | None = None) -> str | None:
+    """Walk rdfs:subPropertyOf chain to find the nearest known ArchiMate predicate."""
+    if pred in known_preds:
+        return known_preds[pred]
+    if _seen is None:
+        _seen = set()
+    if pred in _seen:
+        return None
+    _seen.add(pred)
+    for parent in g.objects(URIRef(pred), RDFS.subPropertyOf):
+        result = _resolve_predicate(str(parent), g, known_preds, _seen)
+        if result:
+            return result
+    return None
+
+
+def _short_type(rdf_type: str) -> str:
+    """Return a readable short form for an RDF type URI."""
+    if "#" in rdf_type:
+        return rdf_type.rsplit("#", 1)[1]
+    if "/" in rdf_type:
+        return rdf_type.rsplit("/", 1)[1]
+    return rdf_type
+
+
+def convert(ttl_path: str | Path, output_path: str | Path,
+            element_yaml: str | Path | None = None,
+            rel_yaml: str | Path | None = None) -> None:
+    # Resolve mapping YAML paths
+    base = Path(__file__).resolve().parent.parent / "src" / "archimate_adapter" / "mapping"
+    elem_yaml = Path(element_yaml) if element_yaml else base / "element_types.yaml"
+    r_yaml = Path(rel_yaml) if rel_yaml else base / "relationship_types.yaml"
+
+    known_types = _load_known_element_types(elem_yaml)
+    known_preds = _load_known_rel_predicates(r_yaml)
+
     g = rdflib.Graph()
     g.parse(str(ttl_path), format="turtle")
 
-    # Collect all subjects that have an archimate:identifier
-    id_map: dict[str, str] = {}  # URI -> archimate:identifier
+    # Collect all subjects with archimate:identifier
+    id_map: dict[str, str] = {}
     for s, _p, o in g.triples((None, ARCHIMATE.identifier, None)):
         id_map[str(s)] = str(o)
 
-    # Build elements with specialization properties
+    # Build elements
     elements: dict[str, ElementInfo] = {}
-    for uri, arch_id in id_map.items():
-        uri_ref = rdflib.URIRef(uri)
+    skipped: list[str] = []
 
-        # Determine ArchiMate XML type
+    for uri, arch_id in id_map.items():
+        uri_ref = URIRef(uri)
+
+        # Find rdf:type and resolve to ArchiMate XML type
         xml_type = None
         original_type = None
         for _s, _p, type_obj in g.triples((uri_ref, RDF.type, None)):
             type_str = str(type_obj)
-            if type_str in TYPE_MAP:
-                xml_type = TYPE_MAP[type_str]
+            resolved = _resolve_type(type_str, g, known_types)
+            if resolved:
+                xml_type = resolved
                 original_type = type_str
                 break
 
         if xml_type is None:
+            skipped.append(f"{arch_id} (unresolvable type)")
             continue
 
-        # Get name
+        # Get name and documentation
         name = None
-        for _s, _p, name_obj in g.triples((uri_ref, ARCHIMATE["name"], None)):
-            name = str(name_obj)
+        for _s, _p, v in g.triples((uri_ref, ARCHIMATE["name"], None)):
+            name = str(v)
             break
 
-        # Get documentation
         doc = None
-        for _s, _p, doc_obj in g.triples((uri_ref, DCT.description, None)):
-            doc = str(doc_obj)
+        for _s, _p, v in g.triples((uri_ref, DCT.description, None)):
+            doc = str(v)
             break
 
-        # Collect specialization properties
+        # Collect all literal-valued properties (skip standard ones)
         props: dict[str, str] = {}
+        if original_type and original_type not in known_types:
+            props["Specialization"] = _short_type(original_type)
 
-        # Always store original Mendoza type as a property
-        if original_type:
-            # Use the short form: e.g. "python:PythonClass"
-            short_type = original_type
-            for prefix, ns in [("archimate:", str(ARCHIMATE)),
-                               ("python:", str(PYTHON)),
-                               ("laravel:", str(LARAVEL))]:
-                if original_type.startswith(ns):
-                    short_type = prefix + original_type[len(ns):]
-                    break
-            props["Specialization"] = short_type
-
-        # Collect all known specialization datatype properties
-        for pred_uri, prop_name in SPEC_PROPERTIES.items():
-            pred = rdflib.URIRef(pred_uri)
-            for _s, _p, val in g.triples((uri_ref, pred, None)):
-                if isinstance(val, rdflib.Literal):
-                    props[prop_name] = str(val)
-                break
+        for _s, pred, obj in g.triples((uri_ref, None, None)):
+            pred_str = str(pred)
+            if pred_str in SKIP_PREDICATES:
+                continue
+            if not isinstance(obj, Literal):
+                continue
+            # Use short predicate name as property key
+            prop_name = _short_type(pred_str)
+            props[prop_name] = str(obj)
 
         elements[uri] = ElementInfo(
             identifier=arch_id,
             xml_type=xml_type,
+            original_type=original_type or "",
             name=name,
             documentation=doc,
             properties=props,
         )
 
-    # Build relationships
+    # Build relationships — scan all predicates between known elements
     relationships: list[RelInfo] = []
     rel_counter = 0
-    for pred_str, rel_type in REL_MAP.items():
-        pred = rdflib.URIRef(pred_str)
-        for s, _p, o in g.triples((None, pred, None)):
-            s_uri = str(s)
-            o_uri = str(o)
-            if s_uri in elements and o_uri in elements:
-                rel_counter += 1
-                relationships.append(RelInfo(
-                    identifier=f"rel-{rel_counter:04d}",
-                    xml_type=rel_type,
-                    source_id=elements[s_uri].identifier,
-                    target_id=elements[o_uri].identifier,
-                ))
+    seen_rels: set[tuple[str, str, str]] = set()
 
-    # Collect all property names used across elements for propertyDefinitions
-    all_prop_names: list[str] = []
-    seen: set[str] = set()
+    for s, p, o in g:
+        s_uri, p_str, o_uri = str(s), str(p), str(o)
+        if s_uri not in elements or o_uri not in elements:
+            continue
+        if not isinstance(o, URIRef):
+            continue
+
+        rel_type = _resolve_predicate(p_str, g, known_preds)
+        if rel_type is None:
+            continue
+
+        key = (s_uri, p_str, o_uri)
+        if key in seen_rels:
+            continue
+        seen_rels.add(key)
+
+        rel_counter += 1
+        relationships.append(RelInfo(
+            identifier=f"rel-{rel_counter:04d}",
+            xml_type=rel_type,
+            source_id=elements[s_uri].identifier,
+            target_id=elements[o_uri].identifier,
+        ))
+
+    # Collect property definitions
     sorted_elements = sorted(elements.values(), key=lambda e: e.identifier)
+    all_prop_names: set[str] = set()
     for elem in sorted_elements:
-        for pname in elem.properties:
-            if pname not in seen:
-                seen.add(pname)
-                all_prop_names.append(pname)
-    all_prop_names.sort()
-
-    # Assign stable identifiers to property definitions
-    propdef_ids: dict[str, str] = {}
-    for i, pname in enumerate(all_prop_names, start=1):
-        propdef_ids[pname] = f"propdef-{i:03d}"
+        all_prop_names.update(elem.properties.keys())
+    prop_names = sorted(all_prop_names)
+    propdef_ids = {name: f"propdef-{i:03d}" for i, name in enumerate(prop_names, 1)}
 
     # Write XML
     model_name = Path(ttl_path).stem
     output = Path(output_path)
     output.parent.mkdir(parents=True, exist_ok=True)
-    _write_xml(sorted_elements, relationships, propdef_ids, all_prop_names,
+    _write_xml(sorted_elements, relationships, propdef_ids, prop_names,
                output, model_name)
 
     print(f"Converted: {len(sorted_elements)} elements, {len(relationships)} relationships")
-    print(f"Property definitions: {len(all_prop_names)}")
+    print(f"Property definitions: {len(prop_names)}")
+    if skipped:
+        print(f"Skipped: {len(skipped)} (no resolvable ArchiMate type)")
+        for s in skipped:
+            print(f"  - {s}")
     print(f"Output: {output_path}")
 
 
@@ -260,7 +301,7 @@ def _write_xml(
         )
     lines.append('  </relationships>')
 
-    # Property definitions (must come after elements and relationships per XSD sequence)
+    # Property definitions (after elements and relationships per XSD sequence)
     if prop_names:
         lines.append('  <propertyDefinitions>')
         for pname in prop_names:
