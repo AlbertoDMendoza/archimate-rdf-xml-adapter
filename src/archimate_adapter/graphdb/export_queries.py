@@ -62,8 +62,12 @@ def select_relationships_query(
             << ?src ?pred ?tgt >> archimate:name ?rname .
           }}
           OPTIONAL {{
-            << ?src ?pred ?tgt >> dct:description ?rdocumentation .
+            << ?src ?pred ?tgt >> dct:description ?dctDoc .
           }}
+          OPTIONAL {{
+            << ?src ?pred ?tgt >> archimate:description ?archDoc .
+          }}
+          BIND(COALESCE(?dctDoc, ?archDoc) AS ?rdocumentation)
           {graph_close}
         }}
         ORDER BY ?rid ?src ?pred ?tgt
