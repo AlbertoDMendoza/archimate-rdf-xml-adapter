@@ -7,6 +7,15 @@ by walking rdfs:subPropertyOf chains. No framework-specific types are hardcoded.
 
 Collects all literal-valued properties on each instance and emits them as
 ArchiMate Exchange XML propertyDefinitions / properties.
+
+Specializations (`archimate:specialization` URI references on elements and
+relationships) are emitted using the convention Archi 5.9 adopted (released
+2026-04-14) per archimatetool/archi#1225 (commits ce2ba5b / 3784f0a): a
+propertyDefinition with the fixed identifier `specialization` and name
+`Specialization`; each specialized element/relationship carries a
+`<property propertyDefinitionRef="specialization"><value>...profile
+name...</value></property>`. Archi recognizes specializations on import by
+the propdef identifier prefix.
 """
 
 from __future__ import annotations
@@ -22,6 +31,12 @@ from rdflib import RDF, RDFS, OWL, Namespace, Literal, URIRef
 ARCHIMATE_RDF_NS = "https://purl.org/archimate#"
 ARCHIMATE = Namespace(ARCHIMATE_RDF_NS)
 DCT = Namespace("http://purl.org/dc/terms/")
+
+# Reserved propertyDefinition identifier for Archi specializations.
+# Archi's XMLModelImporter keys recognition off the identifier prefix
+# `specialization` (archimatetool/archi commit 3784f0a, in 5.9).
+SPECIALIZATION_PROPDEF_ID = "specialization"
+SPECIALIZATION_PROPDEF_NAME = "Specialization"
 
 # Predicates to skip when collecting specialization properties
 SKIP_PREDICATES = {
@@ -56,6 +71,7 @@ class RelInfo:
     xml_type: str
     source_id: str
     target_id: str
+    properties: dict[str, str] = field(default_factory=dict)
 
 
 def _load_known_element_types(yaml_path: Path) -> dict[str, str]:
@@ -118,6 +134,18 @@ def _short_type(rdf_type: str) -> str:
     return rdf_type
 
 
+def _specialization_value(spec_uri: URIRef, g: rdflib.Graph) -> str:
+    """Resolve the human-facing name of a specialization URI.
+
+    Prefer rdfs:label (Archi profiles can have names with spaces, e.g. "Python
+    Package"); fall back to the URI's local name (e.g. PythonPackage).
+    """
+    for _s, _p, label in g.triples((spec_uri, RDFS.label, None)):
+        if isinstance(label, Literal):
+            return str(label)
+    return _short_type(str(spec_uri))
+
+
 def convert(ttl_path: str | Path, output_path: str | Path,
             element_yaml: str | Path | None = None,
             rel_yaml: str | Path | None = None) -> None:
@@ -173,10 +201,11 @@ def convert(ttl_path: str | Path, output_path: str | Path,
         # Collect properties
         props: dict[str, str] = {}
 
-        # archimate:specialization is a URI reference — capture it as "Specialization"
+        # archimate:specialization is a URI reference — capture it as
+        # "Specialization" using the Archi 5.9 convention (#1225).
         for _s, _p, spec_obj in g.triples((uri_ref, ARCHIMATE.specialization, None)):
             if isinstance(spec_obj, URIRef):
-                props["Specialization"] = _short_type(str(spec_obj))
+                props[SPECIALIZATION_PROPDEF_NAME] = _specialization_value(spec_obj, g)
             break
 
         # Collect all literal-valued properties (skip standard ones)
@@ -233,7 +262,17 @@ def convert(ttl_path: str | Path, output_path: str | Path,
     for elem in sorted_elements:
         all_prop_names.update(elem.properties.keys())
     prop_names = sorted(all_prop_names)
-    propdef_ids = {name: f"propdef-{i:03d}" for i, name in enumerate(prop_names, 1)}
+
+    # Reserve the `specialization` identifier for Archi profile recognition
+    # (archimatetool/archi#1225, 5.9); other propdefs get sequential ids.
+    propdef_ids: dict[str, str] = {}
+    seq = 0
+    for name in prop_names:
+        if name == SPECIALIZATION_PROPDEF_NAME:
+            propdef_ids[name] = SPECIALIZATION_PROPDEF_ID
+        else:
+            seq += 1
+            propdef_ids[name] = f"propdef-{seq:03d}"
 
     # Write XML
     model_name = Path(ttl_path).stem
